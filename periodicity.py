@@ -1,14 +1,34 @@
-"""
-see `get_topk_periods` comments
-"""
-
 import datetime
+import math
 from collections import Counter
 
 import numpy as np
 import pandas as pd
 
-from av import format_seconds
+
+def format_seconds(num):
+    """
+    string formatting
+    note that the days in a month is kinda fuzzy
+    :type num: int | float
+    """
+    num = abs(num)
+    if num == 0:
+        return u'0 seconds'
+    elif num == 1:
+        return u'1 second'
+
+    if num < 1:
+        # display 2 significant figures worth of decimals
+        return (u'%%0.%df seconds' % (1 - int(math.floor(math.log10(abs(num)))))) % num
+
+    unit = 0
+    denominators = [60.0, 60.0, 24.0, 7.0, 365.25 / 84.0, 12.0]
+    while unit < 6 and num > denominators[unit] * 0.9:
+        num /= denominators[unit]
+        unit += 1
+    unit = [u'seconds', u'minutes', u'hours', u'days', u'weeks', u'months', u'years'][unit]
+    return (u'%.2f %s' if num % 1 else u'%d %s') % (num, unit[:-1] if num == 1 else unit)
 
 
 def flatten_timestamps(events, magnitudes=None):
@@ -76,13 +96,13 @@ def threshold_time_series(time_series, verbose=False):
     threshold = max(x for x, y in Counter(time_series).most_common() if y != 1)
 
     count_removed = 0
-    for i in xrange(len(time_series)):
+    for i in range(len(time_series)):
         if time_series[i] > threshold:
             count_removed += 1
             time_series[i] = threshold
 
     if verbose:
-        print u'set threshold = {}; trimmed {} data points'.format(threshold, count_removed)
+        print(u'set threshold = {}; trimmed {} data points'.format(threshold, count_removed))
 
     return time_series
 
@@ -99,34 +119,34 @@ def analyze(events, magnitudes=None, threshold=1000, min_items=30, verbose=True)
     """
     # convert to events per second (or sum of magnitudes per second)
     if verbose:
-        print u'flattening...'
+        print(u'flattening...')
     time_series = flatten_timestamps(events, magnitudes)
 
     num_items = sum(x > 0 for x in time_series)
     if verbose:
-        print u'have %d unique timestamps' % num_items
+        print(u'have %d unique timestamps' % num_items)
 
     # skip if not useful
     if min_items and num_items < min_items:
         if verbose:
-            print u'insufficient unique timestamps, meaningless to fft (less than %d)' % min_items
+            print(u'insufficient unique timestamps, meaningless to fft (less than %d)' % min_items)
         return np.nan
 
     # very basic automatic thresholding
     if threshold and num_items > threshold:
         if verbose:
-            print u'thresholding...'
+            print(u'thresholding...')
         time_series = threshold_time_series(time_series, verbose=verbose)
     elif verbose and threshold:
-        print u'not thresholding, only have %d unique timestamps (less than 1000)' % num_items
+        print(u'not thresholding, only have %d unique timestamps (less than 1000)' % num_items)
 
     # run the fft and store results in a df
     if verbose:
-        print u'fft...'
+        print(u'fft...')
     periods, magnitudes = fourier(time_series)
 
     if verbose:
-        print u'making dataframe...'
+        print(u'making dataframe...')
     df_fft = pd.DataFrame.from_records(zip(magnitudes, periods), columns=[u'magnitude', u'period_seconds'])
     df_fft[u'period_days'] = df_fft[u'period_seconds'].apply(lambda x: x / 3600.0 / 24.0)
     df_fft[u'period_timedelta'] = df_fft[u'period_seconds'].apply(lambda x: pd.Timedelta(seconds=x))
@@ -152,7 +172,8 @@ def get_beacon_ratio(ts):
     ratio = len(ts_beacon) / float(len(ts))
     return pd.DataFrame([{u'ratio':       ratio,
                           u'timedelta_s': timedelta.median().total_seconds(),
-                          u'timedelta_f': format_seconds(timedelta.median().total_seconds())}])
+                          u'timedelta_f': format_seconds(timedelta.median().total_seconds())
+                          }])
 
 
 def get_beacon_ratio_records(df, timestamp_col_name=u'timestamp'):
@@ -173,20 +194,9 @@ def get_beacon_ratio_records(df, timestamp_col_name=u'timestamp'):
 
 def get_topk_periods(timestamps, k=20, verbose=True, min_items=30):
     """
-    df_fft = df_others[ (df_others.srcip.str.contains('^160.96.', na=False)) &
-                       ~(df_others.dstip.str.contains('^160.96.', na=False)) &
-                        (df_others.dstip_private == False) &
-                        (df_others.dstport <= 1024) &
-                        (df_others.dstip_owner.isna())
-                     ].groupby(['srcip', 'dstip']).timestamp.apply(pdt.get_topk_periods, verbose=True)
-
-    df_fft = df_fft.sort_values('magnitude', ascending=False).reset_index().drop(columns='level_2')
-
-    NOTE: drop column 'level_1' if groupby was only called on one column
-
     :param timestamps: list of timestamps
     :param k: how many rows to return for each group
-    :param verbose: print stuff to monitor progress from jupyter
+    :param verbose: print(stuff to monitor progress from jupyter)
     :return: df
     """
     out = analyze(timestamps.dropna(), verbose=verbose, min_items=min_items)
